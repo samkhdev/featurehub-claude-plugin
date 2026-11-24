@@ -41,7 +41,7 @@ Why this setup:
 ## Install
 
 ```
-/plugin marketplace add <git-url-or-local-path-of-this-repo>
+/plugin marketplace add samkhdev/featurehub-claude-plugin
 /plugin install featurehub@featurehub-tools
 ```
 
