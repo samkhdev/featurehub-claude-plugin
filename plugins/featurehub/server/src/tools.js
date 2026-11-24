@@ -1,3 +1,4 @@
+import { inputRequired, inputResponse, isInputRequiredResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { FeatureHubError } from './client.js';
 
@@ -23,13 +24,36 @@ function fail(err) {
 }
 
 // Wraps a handler so FeatureHub errors come back to the model as tool errors it can act on.
-const safe = (fn) => async (args) => {
+const safe = (fn) => async (args, ctx) => {
   try {
-    return ok(await fn(args));
+    const result = await fn(args, ctx);
+    return isInputRequiredResult(result) ? result : ok(result);
   } catch (err) {
     return fail(err);
   }
 };
+
+const APPROVAL = 'approval';
+const approvalSchema = z.object({
+  confirm: z.boolean().default(true).describe('Apply this change'),
+});
+
+// Writes run only after the human approves them in a form the MCP client shows directly to them.
+// Returns an input-required result to send the form, or nothing once approved. Anything other
+// than an explicit accept (decline, cancel, no form support) refuses the write.
+function requireApproval(ctx, message) {
+  const response = inputResponse(ctx.mcpReq.inputResponses, APPROVAL);
+  if (response.kind === 'missing') {
+    return inputRequired({
+      inputRequests: { [APPROVAL]: inputRequired.elicit({ message, requestedSchema: approvalSchema }) },
+    });
+  }
+  if (response.kind === 'elicit' && response.action === 'accept' && response.content?.confirm !== false) return null;
+  throw new FeatureHubError('The user did not approve this change, so nothing was written. Do not retry unless the user asks again.');
+}
+
+const show = (v) => (v === null || v === undefined ? '(not set)' : typeof v === 'string' ? JSON.stringify(v) : String(v));
+const envLabel = (env) => (env.production ? `${env.name}  ⚠ PRODUCTION` : env.name);
 
 function readValue(fv, valueType) {
   if (!fv) return null;
@@ -83,20 +107,9 @@ function summarizeValue(fv, valueType) {
   };
 }
 
-export function registerTools(server, client, { readOnly }) {
+export function registerTools(server, client, { writeAccess }) {
   async function getFeature(applicationId, key) {
     return client.get(`/application/${applicationId}/features/${encodeURIComponent(key)}`);
-  }
-
-  // Refuses writes to environments FeatureHub marks as production unless explicitly confirmed.
-  async function guardProduction(environmentId, confirmProduction) {
-    const env = await client.get(`/environment/${environmentId}`);
-    if (env.production && !confirmProduction) {
-      throw new FeatureHubError(
-        `"${env.name}" is a production environment. Confirm with the user, then call again with confirmProduction: true.`,
-      );
-    }
-    return env;
   }
 
   async function getCurrentValue(environmentId, key) {
@@ -222,7 +235,9 @@ export function registerTools(server, client, { readOnly }) {
     }),
   );
 
-  if (readOnly) return;
+  if (writeAccess !== 'ask') return;
+
+  const approvalNote = 'Each call shows the user an approval form; the change is applied only if they approve it there.';
 
   server.registerTool(
     'set_feature_value',
@@ -230,8 +245,7 @@ export function registerTools(server, client, { readOnly }) {
       title: 'Set feature value',
       description:
         'Set the default value of a feature in one environment. Existing rollout strategies are kept. ' +
-        'Fails if the feature is locked there (unlock it first with set_feature_lock). ' +
-        'Production environments need confirmProduction: true, which you must only pass after the user explicitly agreed.',
+        `Fails if the feature is locked there (unlock it first with set_feature_lock). ${approvalNote}`,
       inputSchema: z.object({
         applicationId: uuid('Application'),
         environmentId: uuid('Environment'),
@@ -239,20 +253,30 @@ export function registerTools(server, client, { readOnly }) {
         value: z
           .union([z.boolean(), z.number(), z.string(), z.null(), z.record(z.string(), z.unknown()), z.array(z.unknown())])
           .describe('New value: boolean for flags, number, string, or JSON object/array/string for JSON features. null clears non-flag values.'),
-        confirmProduction: z.boolean().optional(),
       }),
       annotations: WRITE,
     },
-    safe(async ({ applicationId, environmentId, key, value, confirmProduction }) => {
-      const [feature, env] = await Promise.all([
+    safe(async ({ applicationId, environmentId, key, value }, ctx) => {
+      const [feature, env, current] = await Promise.all([
         getFeature(applicationId, key),
-        guardProduction(environmentId, confirmProduction),
+        client.get(`/environment/${environmentId}`),
+        getCurrentValue(environmentId, key),
       ]);
-      const current = await getCurrentValue(environmentId, key);
       if (current?.locked) {
         throw new FeatureHubError(`"${key}" is locked in "${env.name}". Unlock it with set_feature_lock first.`);
       }
       const coerced = coerceValue(value, feature.valueType);
+      const strategies = summarizeValue(current, feature.valueType).hasRolloutStrategies
+        ? '\nNote: rollout strategies on this feature stay in place.'
+        : '';
+
+      const pending = requireApproval(
+        ctx,
+        `Change a FeatureHub value?\n\nFeature: ${key} (${feature.name})\nEnvironment: ${envLabel(env)}\n` +
+          `Value: ${show(readValue(current, feature.valueType))} → ${show(coerced)}${strategies}`,
+      );
+      if (pending) return pending;
+
       // Send both the preferred `value` and the legacy typed field so older FeatureHub servers accept it too.
       const saved = await saveValue(environmentId, key, current, { value: coerced, [VALUE_FIELD[feature.valueType]]: coerced });
       return { environment: summarizeEnvironment(env), key, ...summarizeValue(saved, feature.valueType) };
@@ -263,20 +287,24 @@ export function registerTools(server, client, { readOnly }) {
     'set_feature_lock',
     {
       title: 'Lock or unlock feature',
-      description:
-        'Lock or unlock a feature in one environment. A locked feature cannot have its value changed. ' +
-        'Production environments need confirmProduction: true, which you must only pass after the user explicitly agreed.',
+      description: `Lock or unlock a feature in one environment. A locked feature cannot have its value changed. ${approvalNote}`,
       inputSchema: z.object({
         environmentId: uuid('Environment'),
         key: z.string().describe('Feature key'),
         locked: z.boolean(),
-        confirmProduction: z.boolean().optional(),
       }),
       annotations: WRITE,
     },
-    safe(async ({ environmentId, key, locked, confirmProduction }) => {
-      const env = await guardProduction(environmentId, confirmProduction);
-      const current = await getCurrentValue(environmentId, key);
+    safe(async ({ environmentId, key, locked }, ctx) => {
+      const [env, current] = await Promise.all([client.get(`/environment/${environmentId}`), getCurrentValue(environmentId, key)]);
+
+      const pending = requireApproval(
+        ctx,
+        `${locked ? 'Lock' : 'Unlock'} a FeatureHub feature?\n\nFeature: ${key}\nEnvironment: ${envLabel(env)}\n` +
+          `Locked: ${!!current?.locked} → ${locked}`,
+      );
+      if (pending) return pending;
+
       const saved = await saveValue(environmentId, key, current, { locked });
       return { environment: summarizeEnvironment(env), key, locked: !!saved?.locked, version: saved?.version ?? null };
     }),
@@ -286,7 +314,7 @@ export function registerTools(server, client, { readOnly }) {
     'create_feature',
     {
       title: 'Create feature',
-      description: 'Create a new feature in an application. It starts locked/unset in every environment until values are set.',
+      description: `Create a new feature in an application. It has no value in any environment until one is set. ${approvalNote}`,
       inputSchema: z.object({
         applicationId: uuid('Application'),
         key: z.string().regex(/^[A-Za-z0-9_\-.]+$/).describe('Key used in code; unique within the application'),
@@ -296,7 +324,16 @@ export function registerTools(server, client, { readOnly }) {
       }),
       annotations: WRITE,
     },
-    safe(async ({ applicationId, key, name, valueType, description }) => {
+    safe(async ({ applicationId, key, name, valueType, description }, ctx) => {
+      const app = await client.get(`/application/${applicationId}`);
+
+      const pending = requireApproval(
+        ctx,
+        `Create a FeatureHub feature?\n\nApplication: ${app.name}\nKey: ${key}\nName: ${name}\nType: ${valueType}` +
+          (description ? `\nDescription: ${description}` : ''),
+      );
+      if (pending) return pending;
+
       const all = await client.post(`/application/${applicationId}/features`, { key, name, valueType, description });
       const created = all.find((f) => f.key === key);
       return { key: created?.key ?? key, name: created?.name ?? name, valueType: created?.valueType ?? valueType, id: created?.id ?? null };

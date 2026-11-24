@@ -3,11 +3,23 @@ import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { createClient } from './client.js';
 import { registerTools } from './tools.js';
 
-const baseUrl = process.env.FEATUREHUB_URL?.trim().replace(/\/+$/, '').replace(/\/mr-api$/, '');
-const token = process.env.FEATUREHUB_ADMIN_TOKEN?.trim();
-const readOnly = /^(1|true|yes)$/i.test(process.env.FEATUREHUB_READ_ONLY ?? '');
+// Claude Code may pass an unset optional plugin option through as the literal "${user_config.x}".
+const setting = (name) => {
+  const value = process.env[name]?.trim();
+  return value && !/^\$\{.*\}$/.test(value) ? value : undefined;
+};
 
-const server = new McpServer({ name: 'featurehub', version: '0.1.0' });
-registerTools(server, createClient({ baseUrl, token }), { readOnly });
+const baseUrl = setting('FEATUREHUB_URL')?.replace(/\/+$/, '').replace(/\/mr-api$/, '');
+const writeAccess = setting('FEATUREHUB_WRITE_ACCESS') === 'ask' ? 'ask' : 'off';
+
+const client = createClient({
+  baseUrl,
+  token: setting('FEATUREHUB_ADMIN_TOKEN'),
+  email: setting('FEATUREHUB_EMAIL'),
+  password: setting('FEATUREHUB_PASSWORD'),
+});
+
+const server = new McpServer({ name: 'featurehub', version: '0.2.0' });
+registerTools(server, client, { writeAccess });
 
 await server.connect(new StdioServerTransport());

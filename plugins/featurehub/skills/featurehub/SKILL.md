@@ -14,11 +14,14 @@ FeatureHub is organised as **portfolio → application → environment**. Featur
 
 ## Changing things
 
-1. Say exactly what will change: feature key, environment name, old value → new value.
-2. `set_feature_value` changes the **default** value only. Existing rollout strategies stay, so if `hasRolloutStrategies` is true, tell the user that some users may still get a different value.
-3. If the feature is locked in that environment, ask before unlocking it with `set_feature_lock`. Don't unlock and change it without asking.
-4. **Production:** environments with `production: true` reject writes unless you pass `confirmProduction: true`. Pass it **only** after the user has explicitly confirmed that production change in this conversation. Never pass it on your own initiative, and never reuse a confirmation given for a different change.
-5. After a write, report the new value and version from the tool result.
+Write tools exist only when the user has turned on write access (`write_access: ask` in `/plugin configure featurehub`). If they're missing, say so and tell the user how to enable them. Don't look for other ways to write.
+
+1. Before calling a write tool, say exactly what will change: feature key, environment name, old value → new value.
+2. Each write shows the user an approval form (and usually a Claude Code permission prompt as well). The change happens only if they approve it there. If they decline, nothing is written: report that and don't retry unless they ask again.
+3. `set_feature_value` changes the **default** value only. Existing rollout strategies stay, so if `hasRolloutStrategies` is true, tell the user that some users may still get a different value.
+4. If the feature is locked in that environment, ask before unlocking it with `set_feature_lock`.
+5. Take extra care with environments where `production: true`, and point out that it's production.
+6. After a write, report the new value and version from the tool result.
 
 ## Creating features
 
@@ -27,6 +30,7 @@ FeatureHub is organised as **portfolio → application → environment**. Featur
 
 ## Errors
 
-- HTTP 401: the admin token is wrong or was reset. The user should run `/plugin configure featurehub`.
-- HTTP 403: the user's admin service account isn't in a group with the needed permission. Tell them which portfolio or application is affected. Don't retry.
+- HTTP 401, or a login failure: the token or the email/password is wrong. The user should run `/plugin configure featurehub`. If password login is disabled (SSO), they need an admin service account token.
+- HTTP 403: the account isn't in a group with the needed permission. Tell them which portfolio or application is affected. Don't retry.
 - HTTP 409: someone else changed the value first. Re-read the state with `get_feature_values` and confirm again before retrying.
+- "did not declare the required capability": this client can't show approval forms, so writes are impossible here. Tell the user to make the change in an interactive Claude Code session or in the FeatureHub console.

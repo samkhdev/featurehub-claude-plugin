@@ -6,7 +6,9 @@
       "env": {
         "FEATUREHUB_URL": "${user_config.featurehub_url}",
         "FEATUREHUB_ADMIN_TOKEN": "${user_config.admin_token}",
-        "FEATUREHUB_READ_ONLY": "${FEATUREHUB_READ_ONLY:-false}"
+        "FEATUREHUB_EMAIL": "${user_config.email}",
+        "FEATUREHUB_PASSWORD": "${user_config.password}",
+        "FEATUREHUB_WRITE_ACCESS": "${user_config.write_access}"
       }
     }
   }

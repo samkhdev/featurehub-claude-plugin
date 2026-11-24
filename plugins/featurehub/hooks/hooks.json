@@ -1,0 +1,13 @@
+{
+  "description": "Always ask before a FeatureHub write tool runs, even if it was allowed in settings.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_featurehub_featurehub__(set_feature_value|set_feature_lock|create_feature)",
+        "hooks": [
+          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/ask-before-write.sh\"" }
+        ]
+      }
+    ]
+  }
+}

@@ -1,22 +1,43 @@
 {
   "name": "featurehub",
-  "version": "0.1.0",
-  "description": "Manage FeatureHub feature flags and config values from Claude Code through the FeatureHub Admin API.",
+  "version": "0.2.0",
+  "description": "Manage FeatureHub feature flags and config values from Claude Code through the FeatureHub Admin API. Read-only by default; every write needs your approval.",
   "author": { "name": "Sameer Qaiser", "email": "iamsamkh@gmail.com" },
   "keywords": ["featurehub", "feature-flags", "mcp"],
   "userConfig": {
     "featurehub_url": {
       "type": "string",
       "title": "FeatureHub URL",
-      "description": "Base URL of your FeatureHub Admin (MR) server, e.g. https://featurehub.example.com",
+      "description": "The address you open the FeatureHub console at, e.g. https://featurehub.example.com",
       "required": true
     },
     "admin_token": {
       "type": "string",
-      "title": "Admin service account token",
-      "description": "Access token of YOUR personal admin service account (Admin Service Accounts page). Stored in the OS keychain.",
+      "title": "Admin service account token (option 1)",
+      "description": "Token of a personal admin service account. Leave empty to log in with email and password instead.",
       "sensitive": true,
-      "required": true
+      "required": false
+    },
+    "email": {
+      "type": "string",
+      "title": "FeatureHub email (option 2)",
+      "description": "Your FeatureHub login email, if you don't have a service account token. Does not work with SSO-only logins.",
+      "required": false
+    },
+    "password": {
+      "type": "string",
+      "title": "FeatureHub password (option 2)",
+      "description": "Your FeatureHub password. Stored in the OS keychain.",
+      "sensitive": true,
+      "required": false
+    },
+    "write_access": {
+      "type": "string",
+      "title": "Write access",
+      "description": "off: Claude can only read. ask: Claude can propose changes, and each one needs your approval.",
+      "options": ["off", "ask"],
+      "default": "off",
+      "required": false
     }
   }
 }
