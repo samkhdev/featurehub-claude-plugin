@@ -1,0 +1,17 @@
+{
+  "name": "featurehub-tools",
+  "owner": {
+    "name": "Sameer Qaiser",
+    "email": "iamsamkh@gmail.com"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for working with FeatureHub feature flags"
+  },
+  "plugins": [
+    {
+      "name": "featurehub",
+      "source": "./plugins/featurehub",
+      "description": "FeatureHub Admin API tools (MCP) for Claude Code"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "featurehub": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/dist/index.js"],
+      "env": {
+        "FEATUREHUB_URL": "${user_config.featurehub_url}",
+        "FEATUREHUB_ADMIN_TOKEN": "${user_config.admin_token}",
+        "FEATUREHUB_READ_ONLY": "${FEATUREHUB_READ_ONLY:-false}"
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "featurehub",
+  "version": "0.1.0",
+  "description": "Manage FeatureHub feature flags and config values from Claude Code through the FeatureHub Admin API.",
+  "author": { "name": "Sameer Qaiser", "email": "iamsamkh@gmail.com" },
+  "keywords": ["featurehub", "feature-flags", "mcp"],
+  "userConfig": {
+    "featurehub_url": {
+      "type": "string",
+      "title": "FeatureHub URL",
+      "description": "Base URL of your FeatureHub Admin (MR) server, e.g. https://featurehub.example.com",
+      "required": true
+    },
+    "admin_token": {
+      "type": "string",
+      "title": "Admin service account token",
+      "description": "Access token of YOUR personal admin service account (Admin Service Accounts page). Stored in the OS keychain.",
+      "sensitive": true,
+      "required": true
+    }
+  }
+}

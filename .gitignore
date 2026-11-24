@@ -1,0 +1,3 @@
+node_modules/
+.DS_Store
+# plugins/featurehub/server/dist/ is committed on purpose: installed plugins run it directly.
